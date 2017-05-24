@@ -33,9 +33,11 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define VERSION_STRING_DOTTED STR(VERSION_MAJOR_RELEASE) "." STR(VERSION_MINOR_RELEASE) "." STR(VERSION_EXTERNAL_BUILD) "." STR(VERSION_INTERNAL_BUILD) // "a.b.c.d"
 
 #if defined(_DEBUG)
-	#define	JK_VERSION		"(debug)OpenJK-MP: v" VERSION_STRING_DOTTED
-	#define JK_VERSION_OLD	"(debug)JAmp: v" VERSION_STRING_DOTTED
+	#define	JK_VERSION			"(debug)OpenJK-MP: v" VERSION_STRING_DOTTED
+	#define JK_VERSION_OLD		"(debug)JAmp: v" VERSION_STRING_DOTTED
+	#define JK_VERSION_OLD_1_00	"(debug)JAmp: v" "1.0.0.0"
 #else
-	#define	JK_VERSION		"OpenJK-MP: v" VERSION_STRING_DOTTED
-	#define JK_VERSION_OLD	"JAmp: v" VERSION_STRING_DOTTED
+	#define	JK_VERSION			"OpenJK-MP: v" VERSION_STRING_DOTTED
+	#define JK_VERSION_OLD		"JAmp: v" VERSION_STRING_DOTTED
+	#define JK_VERSION_OLD_1_00	"JAmp: v" "1.0.0.0"
 #endif
