@@ -166,7 +166,7 @@ void SV_DirectConnect( netadr_t from ) {
 	Q_strncpyz( userinfo, Cmd_Argv(1), sizeof(userinfo) );
 
 	version = atoi( Info_ValueForKey( userinfo, "protocol" ) );
-	if ( version != MV_GetCurrentProtocol() ) {
+	if ( (version != PROTOCOL25 && version != PROTOCOL26) || (!sv_omniversion->integer && version != MV_GetCurrentProtocol()) ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "print\nServer uses protocol version %i (yours is %i).\n", MV_GetCurrentProtocol(), version );
 		Com_DPrintf ("    rejected connect from version %i\n", version);
 		return;
@@ -318,6 +318,9 @@ gotnewcl:
 	// save the challenge
 	newcl->challenge = challenge;
 
+	// Remember the protocol
+	newcl->protocol = (mvprotocol_t)version;
+
 	// save the address
 	Netchan_Setup (NS_SERVER, &newcl->netchan , from, qport);
 
@@ -452,7 +455,16 @@ void SV_CreateClientGameStateMessage( client_t *client, msg_t *msg ) {
 		if (sv.configstrings[start][0]) {
 			MSG_WriteByte( msg, svc_configstring );
 			MSG_WriteShort( msg, start );
-			MSG_WriteBigString( msg, sv.configstrings[start] );
+
+			if ( client->protocol == PROTOCOL25 && start == CS_GAME_VERSION && !strcmp(sv.configstrings[start], "basejka-1") ) {
+				MSG_WriteBigString( msg, "basejk-1" );
+			}
+			else if ( client->protocol == PROTOCOL26 && start == CS_GAME_VERSION && !strcmp(sv.configstrings[start], "basejk-1") ) {
+				MSG_WriteBigString( msg, "basejka-1" );
+			}
+			else {
+				MSG_WriteBigString( msg, sv.configstrings[start] );
+			}
 		}
 	}
 

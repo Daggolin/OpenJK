@@ -42,7 +42,15 @@ static void SV_SendConfigstring(client_t *client, int index)
 	int maxChunkSize = MAX_STRING_CHARS - 24;
 	int len;
 
-	len = strlen(sv.configstrings[index]);
+	if ( index == CS_GAME_VERSION && client->protocol == PROTOCOL25 && !strcmp(sv.configstrings[index], "basejka-1") ) {
+		len = strlen("basejk-1");
+	}
+	else if ( index == CS_GAME_VERSION && client->protocol == PROTOCOL26 && !strcmp(sv.configstrings[index], "basejk-1") ) {
+		len = strlen("basejka-1");
+	}
+	else {
+		len = strlen(sv.configstrings[index]);
+	}
 
 	if( len >= maxChunkSize ) {
 		int		sent = 0;
@@ -71,8 +79,16 @@ static void SV_SendConfigstring(client_t *client, int index)
 		}
 	} else {
 		// standard cs, just send it
-		SV_SendServerCommand( client, "cs %i \"%s\"\n", index,
-			sv.configstrings[index] );
+		if ( index == CS_GAME_VERSION && client->protocol == PROTOCOL25 && !strcmp(sv.configstrings[index], "basejka-1") ) {
+			SV_SendServerCommand( client, "cs %i \"%s\"\n", index, "basejk-1" );
+		}
+		else if ( index == CS_GAME_VERSION && client->protocol == PROTOCOL26 && !strcmp(sv.configstrings[index], "basejk-1") ) {
+			SV_SendServerCommand( client, "cs %i \"%s\"\n", index, "basejka-1" );
+		}
+		else {
+			SV_SendServerCommand( client, "cs %i \"%s\"\n", index,
+				sv.configstrings[index] );
+		}
 	}
 }
 
@@ -584,6 +600,7 @@ Ghoul2 Insert End
 
 	// decide which serverversion to host
 	mv_serverversion = Cvar_Get("mv_serverversion", "1.01", CVAR_ARCHIVE | CVAR_LATCH);
+	sv_omniversion = Cvar_Get("sv_omniversion", "0", CVAR_ARCHIVE);
 	if (FS_AllPath_Base_FileExists("assets3.pk3") && (!strcmp(mv_serverversion->string, "auto") || !strcmp(mv_serverversion->string, "1.01"))) {
 		Com_Printf("serverversion set to 1.01\n");
 		MV_SetCurrentGameversion(VERSION_1_01);

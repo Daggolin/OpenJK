@@ -190,6 +190,8 @@ typedef struct client_s {
 	qboolean		csUpdated[MAX_CONFIGSTRINGS];
 
 	demoInfo_t		demo;
+
+	mvprotocol_t	protocol;
 } client_t;
 
 //=============================================================================
@@ -274,6 +276,7 @@ extern	cvar_t	*sv_autoDemoMaxMaps;
 extern	cvar_t	*sv_legacyFixes;
 extern	cvar_t	*sv_banFile;
 extern	cvar_t	*mv_serverversion;
+extern	cvar_t	*sv_omniversion;
 
 extern	serverBan_t serverBans[SERVER_MAXBANS];
 extern	int serverBansCount;

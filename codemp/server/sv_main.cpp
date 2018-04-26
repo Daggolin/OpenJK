@@ -70,6 +70,7 @@ cvar_t	*sv_autoDemoMaxMaps;
 cvar_t	*sv_legacyFixes;
 cvar_t	*sv_banFile;
 cvar_t	*mv_serverversion;
+cvar_t	*sv_omniversion;
 
 serverBan_t serverBans[SERVER_MAXBANS];
 int serverBansCount = 0;
