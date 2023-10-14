@@ -244,7 +244,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64]
+        arch: [x86_64, arm64]
         build_type: [Debug, Release]
         portable: [Non-Portable]
 
@@ -260,7 +260,7 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          OPTIONS="-DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install"
+          OPTIONS="-DSystemProcessor=${{ matrix.arch }} -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install"
           if [ "${{ matrix.portable }}" == "Portable" ]; then
             OPTIONS+=" -DUseInternalLibs=ON -DBuildPortableVersion=ON"
           else
@@ -285,7 +285,7 @@ jobs:
         working-directory: ${{ github.workspace }}/install/JediAcademy
         shell: bash
         run: |
-          chmod +x openjk.x86_64.app/Contents/MacOS/openjk.x86_64
+          chmod +x openjk.${{ matrix.arch }}.app/Contents/MacOS/openjk.${{ matrix.arch }}
           tar -czvf openjk-macos-${{ matrix.arch }}-${{ matrix.build_type }}-${{ matrix.portable }}.tar.gz *
 
       - name: Create OpenJO binary archive
@@ -293,7 +293,7 @@ jobs:
         working-directory: ${{ github.workspace }}/install/JediOutcast
         shell: bash
         run: |
-          chmod +x openjo_sp.x86_64.app/Contents/MacOS/openjo_sp.x86_64
+          chmod +x openjo_sp.${{ matrix.arch }}.app/Contents/MacOS/openjo_sp.${{ matrix.arch }}
           tar -czvf openjo_sp-macos-${{ matrix.arch }}-${{ matrix.build_type }}-${{ matrix.portable }}.tar.gz *
 
       - uses: actions/upload-artifact@v3
