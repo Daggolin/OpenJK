@@ -260,7 +260,7 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          OPTIONS="-DSystemProcessor=${{ matrix.arch }} -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install -DUseInternalLibs=ON"
+          OPTIONS="-DSystemProcessor=${{ matrix.arch }} -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install -DUseInternalOpenAL=ON -DUseInternalZlib=ON -DUseInternalPNG=ON -DUseInternalJPEG=ON"
           if [ "${{ matrix.portable }}" == "Portable" ]; then
             OPTIONS+=" -DBuildPortableVersion=ON"
           else
