@@ -260,11 +260,11 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/build
         run: |
-          OPTIONS="-DSystemProcessor=${{ matrix.arch }} -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install"
+          OPTIONS="-DSystemProcessor=${{ matrix.arch }} -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install -DUseInternalLibs=ON"
           if [ "${{ matrix.portable }}" == "Portable" ]; then
-            OPTIONS+=" -DUseInternalLibs=ON -DBuildPortableVersion=ON"
+            OPTIONS+=" -DBuildPortableVersion=ON"
           else
-            OPTIONS+=" -DUseInternalLibs=OFF -DBuildPortableVersion=OFF"
+            OPTIONS+=" -DBuildPortableVersion=OFF"
           fi
           OPTIONS+=" -DBuildJK2SPEngine=ON -DBuildJK2SPGame=ON -DBuildJK2SPRdVanilla=ON"
           cmake $GITHUB_WORKSPACE $OPTIONS
