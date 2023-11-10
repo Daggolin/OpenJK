@@ -4855,105 +4855,128 @@ a single large text block that can be scanned for shader names
 #define	MAX_SHADER_FILES	4096
 static void ScanAndLoadShaderFiles( void )
 {
-	char **shaderFiles;
+	char **shaderFiles[2];
 	char *buffers[MAX_SHADER_FILES];
 	const char *p;
 	int numShaderFiles;
+	int numShaderFilesType[2];
 	int i;
 	char *oldp, *token, *hashMem, *textEnd;
 	int shaderTextHashTableSizes[MAX_SHADERTEXT_HASH], hash, size;
 	char shaderName[MAX_QPATH];
 	int shaderLine;
+	int type;
+	int bufCount;
 
 	long sum = 0, summand;
 	// scan for shader files
-	shaderFiles = ri.FS_ListFiles( "shaders", ".shader", &numShaderFiles );
+	shaderFiles[0] = ri.FS_ListFiles( "shaders", ".shader_jk2", &numShaderFilesType[0] );
+	shaderFiles[1] = ri.FS_ListFiles( "shaders", ".shader", &numShaderFilesType[1] );
 
-	if ( !shaderFiles || !numShaderFiles )
+	if ( !shaderFiles[0] )
+	{
+		numShaderFilesType[0] = 0;
+	}
+	if ( !shaderFiles[1] )
+	{
+		numShaderFilesType[1] = 0;
+	}
+
+	if ( numShaderFilesType[0] + numShaderFilesType[1] > MAX_SHADER_FILES ) {
+		ri.Printf( PRINT_WARNING, "WARNING: too many shader files, truncating...\n" );
+		numShaderFilesType[0] = Q_min(numShaderFilesType[0], MAX_SHADER_FILES);
+		numShaderFilesType[1] = Q_min(numShaderFilesType[1], MAX_SHADER_FILES - numShaderFilesType[0]);
+	}
+
+	numShaderFiles = numShaderFilesType[0] + numShaderFilesType[1];
+
+	if ( !numShaderFiles )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: no shader files found\n" );
 		return;
 	}
 
-	if ( numShaderFiles > MAX_SHADER_FILES ) {
-		numShaderFiles = MAX_SHADER_FILES;
-	}
-
 	// load and parse shader files
-	for ( i = 0; i < numShaderFiles; i++ )
+	bufCount = 0;
+	for ( type = 0; type < (int)ARRAY_LEN(numShaderFilesType); type++ )
 	{
-		char filename[MAX_QPATH];
-
-		// look for a .mtr file first
+		for ( i = 0; i < numShaderFilesType[type]; i++ )
 		{
-			char *ext;
-			Com_sprintf( filename, sizeof( filename ), "shaders/%s", shaderFiles[i] );
-			if ( (ext = strrchr(filename, '.')) )
-			{
-				strcpy(ext, ".mtr");
-			}
+			char filename[MAX_QPATH];
 
-			if ( ri.FS_ReadFile( filename, NULL ) <= 0 )
+			// look for a .mtr file first
 			{
-				Com_sprintf( filename, sizeof( filename ), "shaders/%s", shaderFiles[i] );
-			}
-		}
-		
-		ri.Printf( PRINT_DEVELOPER, "...loading '%s'\n", filename );
-		summand = ri.FS_ReadFile( filename, (void **)&buffers[i] );
-		
-		if ( !buffers[i] )
-			ri.Error( ERR_DROP, "Couldn't load %s", filename );
-		
-		// Do a simple check on the shader structure in that file to make sure one bad shader file cannot fuck up all other shaders.
-		p = buffers[i];
-		COM_BeginParseSession(filename);
-		while(1)
-		{
-			token = COM_ParseExt(&p, qtrue);
-			
-			if(!*token)
-				break;
-
-			Q_strncpyz(shaderName, token, sizeof(shaderName));
-			shaderLine = COM_GetCurrentParseLine();
-
-			if (token[0] == '#')
-			{
-				ri.Printf(PRINT_WARNING, "WARNING: Deprecated shader comment \"%s\" on line %d in file %s.  Ignoring line.\n",
-					shaderName, shaderLine, filename);
-				SkipRestOfLine(&p);
-				continue;
-			}
-
-			token = COM_ParseExt(&p, qtrue);
-			if(token[0] != '{' || token[1] != '\0')
-			{
-				ri.Printf(PRINT_WARNING, "WARNING: Ignoring shader file %s. Shader \"%s\" on line %d missing opening brace",
-							filename, shaderName, shaderLine);
-				if (token[0])
+				char *ext;
+				Com_sprintf( filename, sizeof( filename ), "shaders/%s", shaderFiles[type][i] );
+				if ( (ext = strrchr(filename, '.')) )
 				{
-					ri.Printf(PRINT_WARNING, " (found \"%s\" on line %d)", token, COM_GetCurrentParseLine());
+					if ( type == 0 ) strcpy(ext, ".mtr_jk2"); // JK2 didn't have mtr files, but we don't want to accidently load mtr in place of jk2 shaders. This should be intentional
+					else strcpy(ext, ".mtr");
 				}
-				ri.Printf(PRINT_WARNING, ".\n");
-				ri.FS_FreeFile(buffers[i]);
-				buffers[i] = NULL;
-				break;
+
+				if ( ri.FS_ReadFile( filename, NULL ) <= 0 )
+				{
+					Com_sprintf( filename, sizeof( filename ), "shaders/%s", shaderFiles[type][i] );
+				}
 			}
 
-			if(!SkipBracedSection(&p, 1))
+			ri.Printf( PRINT_DEVELOPER, "...loading '%s'\n", filename );
+			summand = ri.FS_ReadFile( filename, (void **)&buffers[bufCount] );
+
+			if ( !buffers[bufCount] )
+				ri.Error( ERR_DROP, "Couldn't load %s", filename );
+
+			// Do a simple check on the shader structure in that file to make sure one bad shader file cannot fuck up all other shaders.
+			p = buffers[bufCount];
+			COM_BeginParseSession(filename);
+			while(1)
 			{
-				ri.Printf(PRINT_WARNING, "WARNING: Ignoring shader file %s. Shader \"%s\" on line %d missing closing brace.\n",
-							filename, shaderName, shaderLine);
-				ri.FS_FreeFile(buffers[i]);
-				buffers[i] = NULL;
-				break;
+				token = COM_ParseExt(&p, qtrue);
+
+				if(!*token)
+					break;
+
+				Q_strncpyz(shaderName, token, sizeof(shaderName));
+				shaderLine = COM_GetCurrentParseLine();
+
+				if (token[0] == '#')
+				{
+					ri.Printf(PRINT_WARNING, "WARNING: Deprecated shader comment \"%s\" on line %d in file %s.  Ignoring line.\n",
+						shaderName, shaderLine, filename);
+					SkipRestOfLine(&p);
+					continue;
+				}
+
+				token = COM_ParseExt(&p, qtrue);
+				if(token[0] != '{' || token[1] != '\0')
+				{
+					ri.Printf(PRINT_WARNING, "WARNING: Ignoring shader file %s. Shader \"%s\" on line %d missing opening brace",
+								filename, shaderName, shaderLine);
+					if (token[0])
+					{
+						ri.Printf(PRINT_WARNING, " (found \"%s\" on line %d)", token, COM_GetCurrentParseLine());
+					}
+					ri.Printf(PRINT_WARNING, ".\n");
+					ri.FS_FreeFile(buffers[bufCount]);
+					buffers[bufCount] = NULL;
+					break;
+				}
+
+				if(!SkipBracedSection(&p, 1))
+				{
+					ri.Printf(PRINT_WARNING, "WARNING: Ignoring shader file %s. Shader \"%s\" on line %d missing closing brace.\n",
+								filename, shaderName, shaderLine);
+					ri.FS_FreeFile(buffers[bufCount]);
+					buffers[bufCount] = NULL;
+					break;
+				}
 			}
+
+
+			if (buffers[bufCount])
+				sum += summand;
+			bufCount++;
 		}
-			
-		
-		if (buffers[i])
-			sum += summand;		
 	}
 
 	// build single large buffer
@@ -4976,7 +4999,8 @@ static void ScanAndLoadShaderFiles( void )
 	COM_Compress( s_shaderText );
 
 	// free up memory
-	ri.FS_FreeFileList( shaderFiles );
+	ri.FS_FreeFileList( shaderFiles[1] );
+	ri.FS_FreeFileList( shaderFiles[0] );
 
 	Com_Memset(shaderTextHashTableSizes, 0, sizeof(shaderTextHashTableSizes));
 	size = 0;

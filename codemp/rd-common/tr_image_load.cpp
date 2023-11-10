@@ -93,6 +93,10 @@ void R_ImageLoader_Init()
 	R_ImageLoader_Add ("jpg", LoadJPG);
 	R_ImageLoader_Add ("png", LoadPNG);
 	R_ImageLoader_Add ("tga", LoadTGA);
+
+	R_ImageLoader_Add ("jpg_jk2", LoadJPG);
+	R_ImageLoader_Add ("png_jk2", LoadPNG);
+	R_ImageLoader_Add ("tga_jk2", LoadTGA);
 }
 
 /*

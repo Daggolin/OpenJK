@@ -214,6 +214,7 @@ typedef struct pack_s {
 	int				hashSize;					// hash table size (power of 2)
 	fileInPack_t*	*hashTable;					// hash table
 	fileInPack_t*	buildBuffer;				// buffer with the filenames etc.
+	qboolean		isJK2;						// jk2 assets
 } pack_t;
 
 typedef struct directory_s {
@@ -245,6 +246,9 @@ static cvar_t		*fs_copyfiles;
 static cvar_t		*fs_gamedirvar;
 static cvar_t		*fs_dirbeforepak; //rww - when building search path, keep directories at top and insert pk3's under them
 static cvar_t		*fs_forcegame;
+static cvar_t		*fs_assetspathjk2;
+static cvar_t		*fs_basejk2;
+static cvar_t		*fs_loadjk2;
 static searchpath_t	*fs_searchpaths;
 static int			fs_readCount;			// total bytes read
 static int			fs_loadCount;			// total files read
@@ -2111,7 +2115,7 @@ Creates a new pak_t in the search chain for the contents
 of a zip file.
 =================
 */
-static pack_t *FS_LoadZipFile( const char *zipfile, const char *basename )
+static pack_t *FS_LoadZipFile( const char *zipfile, const char *basename, qboolean assetsJK2 )
 {
 	fileInPack_t	*buildBuffer;
 	pack_t			*pack;
@@ -2126,6 +2130,7 @@ static pack_t *FS_LoadZipFile( const char *zipfile, const char *basename )
 	int				fs_numHeaderLongs;
 	int				*fs_headerLongs;
 	char			*namePtr;
+	int				strLength;
 
 	fs_numHeaderLongs = 0;
 
@@ -2143,7 +2148,21 @@ static pack_t *FS_LoadZipFile( const char *zipfile, const char *basename )
 		if (err != UNZ_OK) {
 			break;
 		}
-		len += strlen(filename_inzip) + 1;
+		strLength = strlen(filename_inzip);
+		if ( assetsJK2 ) {
+			// Ugly workarounds:
+			//  - rename jk2 shader files to avoid collisions
+			//  - rename jk2 sounds.cfg files to prevent them from overriding sounds of jka models that don't have a sounds.cfg
+			//  - renamed jpg, png and tga files so the renderer can try them later (in case jk2 uses a higher priority extension for a name collision)
+			if ( strLength > 7 && !Q_stricmp(filename_inzip + strLength - 7, ".shader") ) {
+				len += 4; // "_jk2"
+			} else if ( strLength > 15 && !Q_stricmpn(filename_inzip, "models/players/", 15) && !Q_stricmp(filename_inzip + strLength - 11, "/sounds.cfg") ) {
+				len += 4; // "_jk2"
+			} else if ( strLength > 4 && (!Q_stricmp(filename_inzip + strLength - 7, ".jpg") || !Q_stricmp(filename_inzip + strLength - 7, ".png") || !Q_stricmp(filename_inzip + strLength - 7, ".tga")) ) {
+				len += 4; // "-jk2"
+			}
+		}
+		len += strLength + 1;
 		unzGoToNextFile(uf);
 	}
 
@@ -2187,6 +2206,20 @@ static pack_t *FS_LoadZipFile( const char *zipfile, const char *basename )
 		}
 		if (file_info.uncompressed_size > 0) {
 			fs_headerLongs[fs_numHeaderLongs++] = LittleLong(file_info.crc);
+		}
+		if ( assetsJK2 ) {
+			// Ugly workarounds:
+			//  - rename jk2 shader files to avoid collisions
+			//  - rename jk2 sounds.cfg files to prevent them from overriding sounds of jka models that don't have a sounds.cfg
+			//  - renamed jpg, png and tga files so the renderer can try them later (in case jk2 uses a higher priority extension for a name collision)
+			strLength = strlen( filename_inzip );
+			if ( strLength > 7 && !Q_stricmp(filename_inzip + strLength - 7, ".shader") ) {
+				Q_strcat( filename_inzip, sizeof(filename_inzip), "_jk2" );
+			} else if ( strLength > 15 && !Q_stricmpn(filename_inzip, "models/players/", 15) && !Q_stricmp(filename_inzip + strLength - 11, "/sounds.cfg") ) {
+				Q_strcat( filename_inzip, sizeof(filename_inzip), "_jk2" );
+			} else if ( strLength > 4 && (!Q_stricmp(filename_inzip + strLength - 7, ".jpg") || !Q_stricmp(filename_inzip + strLength - 7, ".png") || !Q_stricmp(filename_inzip + strLength - 7, ".tga")) ) {
+				Q_strcat( filename_inzip, sizeof(filename_inzip), "_jk2" );
+			}
 		}
 		Q_strlwr( filename_inzip );
 		hash = FS_HashFileName(filename_inzip, pack->hashSize);
@@ -2234,12 +2267,12 @@ FS_GetZipChecksum
 Compares whether the given pak file matches a referenced checksum
 =================
 */
-qboolean FS_CompareZipChecksum(const char *zipfile)
+qboolean FS_CompareZipChecksum(const char *zipfile, qboolean assetsJK2)
 {
 	pack_t *thepak;
 	int index, checksum;
 
-	thepak = FS_LoadZipFile(zipfile, "");
+	thepak = FS_LoadZipFile(zipfile, "", assetsJK2);
 
 	if(!thepak)
 		return qfalse;
@@ -3047,7 +3080,7 @@ Sets fs_gamedir, adds the directory to the head of the path,
 then loads the zip headers
 ================
 */
-static void FS_AddGameDirectory( const char *path, const char *dir ) {
+static void FS_AddGameDirectory( const char *path, const char *dir, qboolean assetsJK2 = qfalse ) {
 	searchpath_t	*sp;
 	int				i;
 	searchpath_t	*search;
@@ -3075,16 +3108,20 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 	//
 	// add the directory to the search path
 	//
-	search = (struct searchpath_s *)Z_Malloc (sizeof(searchpath_t), TAG_FILESYS, qtrue);
-	search->dir = (directory_t *)Z_Malloc( sizeof( *search->dir ), TAG_FILESYS, qtrue );
+	if ( !assetsJK2 ) {
+		search = (struct searchpath_s *)Z_Malloc (sizeof(searchpath_t), TAG_FILESYS, qtrue);
+		search->dir = (directory_t *)Z_Malloc( sizeof( *search->dir ), TAG_FILESYS, qtrue );
 
-	Q_strncpyz( search->dir->path, path, sizeof( search->dir->path ) );
-	Q_strncpyz( search->dir->fullpath, curpath, sizeof( search->dir->fullpath ) );
-	Q_strncpyz( search->dir->gamedir, dir, sizeof( search->dir->gamedir ) );
-	search->next = fs_searchpaths;
-	fs_searchpaths = search;
+		Q_strncpyz( search->dir->path, path, sizeof( search->dir->path ) );
+		Q_strncpyz( search->dir->fullpath, curpath, sizeof( search->dir->fullpath ) );
+		Q_strncpyz( search->dir->gamedir, dir, sizeof( search->dir->gamedir ) );
+		search->next = fs_searchpaths;
+		fs_searchpaths = search;
+		thedir = search;
+	} else {
+		thedir = NULL;
+	}
 
-	thedir = search;
 
 	pakfiles = Sys_ListFiles( curpath, ".pk3", NULL, &numfiles, qfalse );
 
@@ -3096,7 +3133,14 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 		pakfile = FS_BuildOSPath( path, dir, pakfiles[i] );
 		filename = get_filename(pakfile);
 
-		if ( ( pak = FS_LoadZipFile( pakfile, pakfiles[i] ) ) == 0 )
+		if ( assetsJK2 ) {
+			if (strcmp(filename, "assets0.pk3") && strcmp(filename, "assets1.pk3") &&
+				strcmp(filename, "assets2.pk3") && strcmp(filename, "assets5.pk3")) {
+				continue;
+			}
+		}
+
+		if ( ( pak = FS_LoadZipFile( pakfile, pakfiles[i], assetsJK2 ) ) == 0 )
 			continue;
 
 		// files beginning with "dl_" are only loaded when referenced by the server
@@ -3126,11 +3170,16 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 		Q_strncpyz(pak->pakGamename, dir, sizeof(pak->pakGamename));
 
 		// if the pk3 is not in base, always reference it (standard jk2 behaviour)
-		if (Q_stricmpn(pak->pakGamename, BASEGAME, (int)strlen(BASEGAME))) {
+		if (assetsJK2) {
+			pak->noref = qtrue;
+		} else if (Q_stricmpn(pak->pakGamename, BASEGAME, (int)strlen(BASEGAME))) {
 			pak->referenced |= FS_GENERAL_REF;
 		}
 
 		fs_packFiles += pak->numfiles;
+
+		// Mark jk2 assets as such
+		pak->isJK2 = assetsJK2;
 
 		search = (searchpath_s *)Z_Malloc (sizeof(searchpath_t), TAG_FILESYS, qtrue);
 		search->pack = pak;
@@ -3156,6 +3205,10 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 
 	// done
 	Sys_FreeFileList( pakfiles );
+}
+
+static void FS_AddAssetsDirectoryJK2( const char *path, const char *dir ) {
+	FS_AddGameDirectory( path, dir, qtrue );
 }
 
 /*
@@ -3535,7 +3588,10 @@ void FS_LoadReflists( void ) {
 		if (search->pack) {
 			Com_sprintf(packstr, sizeof(packstr), "\n%s/%s.pk3", search->pack->pakGamename, search->pack->pakBasename);
 
-			if (f_w && !Q_stristr(mv_whitelist, packstr)) {
+			if (search->pack->noref) {
+				// Clear references if it has already been blacklisted
+				search->pack->referenced = 0;
+			} else if (f_w && !Q_stristr(mv_whitelist, packstr)) {
 				search->pack->noref = qtrue;
 				search->pack->referenced = 0;
 			} else if (f_b && Q_stristr(mv_blacklist, packstr)) {
@@ -3583,6 +3639,27 @@ void FS_Startup( const char *gameName ) {
 	fs_dirbeforepak = Cvar_Get("fs_dirbeforepak", "0", CVAR_INIT|CVAR_PROTECTED, "Prioritize directories before paks if not pure" );
 
 	fs_forcegame = Cvar_Get ("fs_forcegame", "", CVAR_INIT, "Folder to use for overriding of fs_game (can not be set by the server)." );
+
+	fs_assetspathjk2 = Cvar_Get("fs_assetspathjk2", "", CVAR_INIT|CVAR_PROTECTED);
+	fs_basejk2 = Cvar_Get("fs_basejk2", fs_assetspathjk2->string[0] ? "base" : "basejk2", CVAR_INIT|CVAR_PROTECTED);
+	fs_loadjk2 = Cvar_Get("fs_loadjk2", "1", CVAR_ARCHIVE|CVAR_LATCH);
+
+	// Try to load JK2 assets if a path has been specified
+	if ( fs_loadjk2->integer && fs_basejk2->string[0] ) {
+		if (fs_assetspathjk2->string[0]) {
+			// Got a JK2 GameData path
+			FS_AddAssetsDirectoryJK2(fs_assetspathjk2->string, fs_basejk2->string);
+		} else {
+			// Try to find assets inside of a fs_basejk2 folder in any of the other paths
+			if (fs_cdpath->string[0] && FS_FileInPathExists(FS_BuildOSPath(fs_cdpath->string, fs_basejk2->string, "assets0.pk3"))) {
+				FS_AddAssetsDirectoryJK2(fs_cdpath->string, fs_basejk2->string);
+			} else if (fs_basepath->string[0] && FS_FileInPathExists(FS_BuildOSPath(fs_basepath->string, fs_basejk2->string, "assets0.pk3"))) {
+				FS_AddAssetsDirectoryJK2(fs_basepath->string, fs_basejk2->string);
+			} else if (fs_homepath->string[0] && FS_FileInPathExists(FS_BuildOSPath(fs_homepath->string, fs_basejk2->string, "assets0.pk3"))) {
+				FS_AddAssetsDirectoryJK2(fs_homepath->string, fs_basejk2->string);
+			}
+		}
+	}
 
 	// add search path elements in reverse priority order (lowest priority first)
 	if (fs_cdpath->string[0]) {
@@ -4026,6 +4103,9 @@ void FS_InitFilesystem( void ) {
 	Com_StartupVariable( "fs_apppath" );
 #endif
 	Com_StartupVariable( "fs_forcegame" );
+	Com_StartupVariable( "fs_assetspathjk2" );
+	Com_StartupVariable( "fs_basejk2" );
+	Com_StartupVariable( "fs_loadjk2" );
 
 	if(!FS_FilenameCompare(Cvar_VariableString("fs_game"), BASEGAME))
 		Cvar_Set("fs_game", "");

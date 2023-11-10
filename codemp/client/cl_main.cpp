@@ -1424,7 +1424,7 @@ void CL_NextDownload(void) {
 		char *zippath = FS_BuildOSPath(Cvar_VariableString("fs_homepath"), clc.downloadName, "");
 		zippath[strlen(zippath)-1] = '\0';
 
-		if(!FS_CompareZipChecksum(zippath))
+		if(!FS_CompareZipChecksum(zippath, qfalse))
 			Com_Error(ERR_DROP, "Incorrect checksum for file: %s", clc.downloadName);
 	}
 
