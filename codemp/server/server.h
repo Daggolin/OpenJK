@@ -153,8 +153,7 @@ typedef struct client_s {
 	int				lastMessageNum;		// for delta compression
 	int				lastClientCommand;	// reliable client message sequence
 	char			lastClientCommandString[MAX_STRING_CHARS];
-	sharedEntity_t	*gentity;			// SV_GentityNum(clientnum)
-	sharedEntityMapper_t *gentityMapper;
+	sharedEntityMapper_t *gentityMapper;	// SV_GentityMapperNum(clientnum)
 	char			name[MAX_NAME_LENGTH];			// extracted from userinfo, high bits masked
 
 	// downloading
@@ -381,35 +380,18 @@ void SV_SendClientSnapshot( client_t *client );
 //
 int	SV_NumForGentity( const sharedEntity_t *ent );
 int	SV_NumForGentityMapper( const sharedEntityMapper_t *ent );
-sharedEntity_t *SV_GentityNum( int num );
 sharedEntityMapper_t *SV_GentityMapperNum( int num );
 playerState_t *SV_GameClientNum( int num );
 svEntity_t	*SV_SvEntityForGentity( sharedEntity_t *gEnt );
 svEntity_t	*SV_SvEntityForGentityMapper( sharedEntityMapper_t *gEnt );
-sharedEntity_t *SV_GEntityForSvEntity( svEntity_t *svEnt );
 sharedEntityMapper_t *SV_GEntityMapperForSvEntity( svEntity_t *svEnt );
 sharedEntityMapper_t *SV_GEntityMapperForGentity( const sharedEntity_t *gEnt );
 void		SV_InitGameProgs ( void );
 void		SV_ShutdownGameProgs ( void );
 qboolean	SV_inPVS (const vec3_t p1, const vec3_t p2);
 
-CGhoul2Info_v *SV_G2Map_GetG2FromHandle( g2handleptr_t g2h );
-CGhoul2Info_v **SV_G2Map_GetG2PtrFromHandle( g2handleptr_t g2h );
-void SV_G2Map_Update( g2handleptr_t *g2h, CGhoul2Info_v *g2Ptr );
-
-#define ENTITYMAP_READER_PROTO( type, funcName ) type funcName( type *inPtr );
-
-ENTITYMAP_READER_PROTO( char*, SV_EntityMapperReadString );
-ENTITYMAP_READER_PROTO( void*, SV_EntityMapperReadData );
-ENTITYMAP_READER_PROTO( playerState_t*, SV_EntityMapperReadPlayerState );
-#if (!defined(MACOS_X) && !defined(__GCC__) && !defined(__GNUC__))
-	ENTITYMAP_READER_PROTO( Vehicle_t*, SV_EntityMapperReadVehicle );
-#else
-	ENTITYMAP_READER_PROTO( struct Vehicle_s*, SV_EntityMapperReadVehicle );
-#endif
-ENTITYMAP_READER_PROTO( parms_t*, SV_EntityMapperReadParms );
-
-void *SV_EntityMapperReadGhoul2( void **inPtr );
+void* SV_EntityMapperReadPointer(pointerMapper_t ptr);
+g2handleptr_t SV_EntityMapperReadGhoul2( sharedEntityMapper_t *svEnt );
 
 //
 // sv_bot.c

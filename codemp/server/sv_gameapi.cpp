@@ -31,8 +31,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "qcommon/timing.h"
 #include "NPCNav/navigator.h"
 #include "qcommon/vm_local.h"
-
-#include <unordered_map>
+#include "qcommon/g2_handle_mapper.h"
 
 botlib_export_t	*botlib_export;
 
@@ -40,61 +39,8 @@ botlib_export_t	*botlib_export;
 static gameExport_t *ge; // game export table
 static vm_t *gvm; // game vm, valid for legacy and new api
 
-typedef std::unordered_map<g2handle_t, CGhoul2Info_v*> g2HandleToG2_m;
-
-static g2HandleToG2_m g2Mapping;
-static g2handle_t g2NextHandle = (g2handle_t)1; // Start at 1, because 0 has special meaning
-
-CGhoul2Info_v *SV_G2Map_GetG2FromHandle( g2handleptr_t g2h )
-{ // Returns the pointer to the g2 object if the handle is valid
-	// Native libraries should not use the pointer, but in theory they could use
-	// it. Thus we don't perform any mapping for native libraries to avoid
-	// issues with custom modules.
-	if ( gvm->dllHandle ) return (CGhoul2Info_v*)g2h;
-
-	g2handle_t g2handle = (g2handle_t)g2h;
-	g2HandleToG2_m::iterator ghlIt = g2Mapping.find(g2handle);
-
-	if (ghlIt == g2Mapping.end()) return NULL;
-	return g2Mapping[g2handle];
-}
-
- CGhoul2Info_v **SV_G2Map_GetG2PtrFromHandle( g2handleptr_t *g2h )
-{ // Returns a pointer to the g2 object pointer in the map so g2 functions can update the pointer
-	// Native libraries should not use the pointer, but in theory they could use
-	// it. Thus we don't perform any mapping for native libraries to avoid
-	// issues with custom modules.
-	if ( gvm->dllHandle ) return (CGhoul2Info_v **)g2h;
-
-	g2handle_t g2handle = *((g2handle_t*)g2h);
-	if ( !g2handle )
-	{ // Special case: the g2 handle is not valid, yet. Return a pointer to a static temporary pointer. Insertion is handled by calling SV_G2Map_Update after calling the G2API
-		static CGhoul2Info_v *g2Tmp;
-		g2Tmp = NULL;
-		return &g2Tmp;
-	}
-	return &g2Mapping[g2handle];
-}
-
-void SV_G2Map_Update( g2handleptr_t *g2h, CGhoul2Info_v *g2Ptr )
-{ // Inserts and/or erases to/from the map and updates the handle pointer
-	if ( gvm->dllHandle ) return;
-
-	g2handle_t *g2handle = (g2handle_t*)g2h;
-	if ( !*g2handle && g2Ptr )
-	{ // Got a 0 handle, but a non-0 pointer: add to map and set handle
-		// Unlikely to happen, but should we ever cycle through the whole integer range start searching for gaps
-		while ( SV_G2Map_GetG2FromHandle(g2NextHandle) || !g2NextHandle ) g2NextHandle++;
-
-		g2Mapping[g2NextHandle] = g2Ptr;
-		*g2handle = g2NextHandle++;
-	}
-	else if ( *g2h && !g2Ptr )
-	{ // Got a non-0 handle, but 0 pointer: remove from map and set handle to 0
-		g2Mapping.erase( *g2handle );
-		*g2handle = 0;
-	}
-}
+// non-static because sv_world.cpp also needs to access it
+Ghoul2HandleMapper sv_g2Mapping{gvm};
 
 //
 // game vmMain calls
@@ -592,31 +538,31 @@ static void SV_UpdateSharedEntitiesMapping( void ) {
 			entM = &sv.gentitiesMapper[i];
 
 			// Assign all values
-			entM->s                       = &ent->s;
-			entM->playerState             = &ent->playerState;
-			entM->m_pVehicle              = &ent->m_pVehicle;
-			entM->ghoul2                  = &ent->ghoul2;
-			entM->localAnimIndex          = &ent->localAnimIndex;
-			entM->modelScale              = &ent->modelScale;
-			entM->r                       = &ent->r;
-			entM->taskID                  = &ent->taskID;
-			entM->parms                   = &ent->parms;
+			entM->s                         = &ent->s;
+			entM->playerState.native        = reinterpret_cast<void**>(&ent->playerState);
+			entM->m_pVehicle.native         = reinterpret_cast<void**>(&ent->m_pVehicle);
+			entM->ghoul2Native              = reinterpret_cast<g2handleptr_t*>(&ent->ghoul2);
+			entM->localAnimIndex            = &ent->localAnimIndex;
+			entM->modelScale                = &ent->modelScale;
+			entM->r                         = &ent->r;
+			entM->taskID                    = &ent->taskID;
+			entM->parms.native              = reinterpret_cast<void**>(&ent->parms);
 			for ( j = 0; j < NUM_BSETS; j++ ) {
-				entM->behaviorSet[j]      = &(ent->behaviorSet[j]);
+				entM->behaviorSet[j].native = reinterpret_cast<void**>((&(ent->behaviorSet[j])));
 			}
-			entM->script_targetname       = &ent->script_targetname;
-			entM->delayScriptTime         = &ent->delayScriptTime;
-			entM->fullName                = &ent->fullName;
-			entM->targetname              = &ent->targetname;
-			entM->classname               = &ent->classname;
-			entM->waypoint                = &ent->waypoint;
-			entM->lastWaypoint            = &ent->lastWaypoint;
-			entM->lastValidWaypoint       = &ent->lastValidWaypoint;
-			entM->noWaypointTime          = &ent->noWaypointTime;
-			entM->combatPoint             = &ent->combatPoint;
-			entM->failedWaypoints         = &ent->failedWaypoints;
-			entM->failedWaypointCheckTime = &ent->failedWaypointCheckTime;
-			entM->next_roff_time          = &ent->next_roff_time;
+			entM->script_targetname.native  = reinterpret_cast<void**>(&ent->script_targetname);
+			entM->delayScriptTime           = &ent->delayScriptTime;
+			entM->fullName.native           = reinterpret_cast<void**>(&ent->fullName);
+			entM->targetname.native         = reinterpret_cast<void**>(&ent->targetname);
+			entM->classname.native          = reinterpret_cast<void**>(&ent->classname);
+			entM->waypoint                  = &ent->waypoint;
+			entM->lastWaypoint              = &ent->lastWaypoint;
+			entM->lastValidWaypoint         = &ent->lastValidWaypoint;
+			entM->noWaypointTime            = &ent->noWaypointTime;
+			entM->combatPoint               = &ent->combatPoint;
+			entM->failedWaypoints           = &ent->failedWaypoints;
+			entM->failedWaypointCheckTime   = &ent->failedWaypointCheckTime;
+			entM->next_roff_time            = &ent->next_roff_time;
 		}
 	} else {
 		sharedEntity_qvm_t *ent;
@@ -627,26 +573,22 @@ static void SV_UpdateSharedEntitiesMapping( void ) {
 
 			// Assign all values
 			entM->s                       = &ent->s;
-			entM->playerState             = (playerState_t**)&ent->playerState;
-#if (!defined(MACOS_X) && !defined(__GCC__) && !defined(__GNUC__))
-			entM->m_pVehicle              = (Vehicle_t**)&ent->m_pVehicle;
-#else
-			entM->m_pVehicle              = (struct Vehicle_s**)&ent->m_pVehicle;
-#endif
-			entM->ghoul2                  = (void**)&ent->ghoul2;
+			entM->playerState.qvm         = &ent->playerState;
+			entM->m_pVehicle.qvm          = &ent->m_pVehicle;
+			entM->ghoul2QVM               = &ent->ghoul2;
 			entM->localAnimIndex          = &ent->localAnimIndex;
 			entM->modelScale              = &ent->modelScale;
 			entM->r                       = &ent->r;
 			entM->taskID                  = &ent->taskID;
-			entM->parms                   = (parms_t**)&ent->parms;
+			entM->parms.qvm               = &ent->parms;
 			for ( j = 0; j < NUM_BSETS; j++ ) {
-				entM->behaviorSet[j]      = (char**)&(ent->behaviorSet[j]);
+				entM->behaviorSet[j].qvm  = &(ent->behaviorSet[j]);
 			}
-			entM->script_targetname       = (char**)&ent->script_targetname;
+			entM->script_targetname.qvm   = &ent->script_targetname;
 			entM->delayScriptTime         = &ent->delayScriptTime;
-			entM->fullName                = (char**)&ent->fullName;
-			entM->targetname              = (char**)&ent->targetname;
-			entM->classname               = (char**)&ent->classname;
+			entM->fullName.qvm            = &ent->fullName;
+			entM->targetname.qvm          = &ent->targetname;
+			entM->classname.qvm           = &ent->classname;
 			entM->waypoint                = &ent->waypoint;
 			entM->lastWaypoint            = &ent->lastWaypoint;
 			entM->lastValidWaypoint       = &ent->lastValidWaypoint;
@@ -659,31 +601,21 @@ static void SV_UpdateSharedEntitiesMapping( void ) {
 	}
 }
 
-#define ENTITYMAP_READER( type, funcName ) \
-	type funcName( type *inPtr ) { \
-		if ( gvm->dllHandle ) { \
-			return *inPtr; \
-		} else { \
-			return (type)VM_ArgPtr((intptr_t)(*(uint32_t*)inPtr)); \
-		} \
+void* SV_EntityMapperReadPointer(pointerMapper_t ptr) {
+	if (gvm->dllHandle) {
+		return *ptr.native;
 	}
+	else {
+		return VM_ArgPtr(*ptr.qvm);
+	}
+}
 
-ENTITYMAP_READER( char*, SV_EntityMapperReadString );
-ENTITYMAP_READER( void*, SV_EntityMapperReadData );
-ENTITYMAP_READER( playerState_t*, SV_EntityMapperReadPlayerState );
-#if (!defined(MACOS_X) && !defined(__GCC__) && !defined(__GNUC__))
-	ENTITYMAP_READER( Vehicle_t*, SV_EntityMapperReadVehicle );
-#else
-	ENTITYMAP_READER( struct Vehicle_s*, SV_EntityMapperReadVehicle );
-#endif
-ENTITYMAP_READER( parms_t*, SV_EntityMapperReadParms );
-
-void *SV_EntityMapperReadGhoul2( void **inPtr ) {
-	if ( gvm->dllHandle ) {
-		return *inPtr;
-	} else {
-		// For QVMs the address is actually a handle we have to interpret as uint32_t
-		return (void*)(intptr_t)(*(uint32_t*)inPtr);
+g2handleptr_t SV_EntityMapperReadGhoul2(sharedEntityMapper_t* svEnt) {
+	if (gvm->dllHandle) {
+		return *svEnt->ghoul2Native;
+	}
+	else {
+		return static_cast<g2handleptr_t>(*svEnt->ghoul2QVM);
 	}
 }
 
@@ -1703,81 +1635,84 @@ static void SV_G2API_ListModelBones( void *ghlInfo, int frame ) {
 
 static void SV_G2API_SetGhoul2ModelIndexes( void *ghoul2, qhandle_t *modelList, qhandle_t *skinList ) {
 	if ( !ghoul2 ) return;
-	re->G2API_SetGhoul2ModelIndexes( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelList, skinList );
+	re->G2API_SetGhoul2ModelIndexes( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelList, skinList );
 }
 
 static qboolean SV_G2API_HaveWeGhoul2Models( void *ghoul2) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_HaveWeGhoul2Models( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)) );
+	return re->G2API_HaveWeGhoul2Models( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)));
 }
 
 static qboolean SV_G2API_GetBoltMatrix( void *ghoul2, const int modelIndex, const int boltIndex, mdxaBone_t *matrix, const vec3_t angles, const vec3_t position, const int frameNum, qhandle_t *modelList, vec3_t scale ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_GetBoltMatrix( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
+	return re->G2API_GetBoltMatrix( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
 }
 
 static qboolean SV_G2API_GetBoltMatrix_NoReconstruct( void *ghoul2, const int modelIndex, const int boltIndex, mdxaBone_t *matrix, const vec3_t angles, const vec3_t position, const int frameNum, qhandle_t *modelList, vec3_t scale ) {
 	if ( !ghoul2 ) return qfalse;
 	re->G2API_BoltMatrixReconstruction( qfalse );
-	return re->G2API_GetBoltMatrix( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
+	return re->G2API_GetBoltMatrix( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
 }
 
 static qboolean SV_G2API_GetBoltMatrix_NoRecNoRot( void *ghoul2, const int modelIndex, const int boltIndex, mdxaBone_t *matrix, const vec3_t angles, const vec3_t position, const int frameNum, qhandle_t *modelList, vec3_t scale ) {
 	if ( !ghoul2 ) return qfalse;
 	re->G2API_BoltMatrixReconstruction( qfalse );
 	re->G2API_BoltMatrixSPMethod( qtrue );
-	return re->G2API_GetBoltMatrix( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
+	return re->G2API_GetBoltMatrix( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boltIndex, matrix, angles, position, frameNum, modelList, scale );
 }
 
-static int SV_G2API_InitGhoul2Model( void **ghoul2Ptr, const char *fileName, int modelIndex, qhandle_t customSkin, qhandle_t customShader, int modelFlags, int lodBias ) {
+static int SV_G2API_InitGhoul2Model( void **rawG2HandleReceiver, const char *fileName, int modelIndex, qhandle_t customSkin, qhandle_t customShader, int modelFlags, int lodBias ) {
 #ifdef _FULL_G2_LEAK_CHECKING
-		g_G2AllocServer = 1;
+	g_G2AllocServer = 1;
 #endif
-	CGhoul2Info_v **g2Ptr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)ghoul2Ptr );
-	int ret = re->G2API_InitGhoul2Model( g2Ptr, fileName, modelIndex, customSkin, customShader, modelFlags, lodBias );
-	SV_G2Map_Update( (g2handleptr_t*)ghoul2Ptr, *g2Ptr );
+	g2handleptr_t* g2HandleReceiver = reinterpret_cast<g2handleptr_t*>(rawG2HandleReceiver);
+	assert(g2HandleReceiver); // as required by G2API
+	CGhoul2Info_v* g2 = sv_g2Mapping.Lookup(*g2HandleReceiver); // likely NULL
+	int ret = re->G2API_InitGhoul2Model( &g2, fileName, modelIndex, customSkin, customShader, modelFlags, lodBias );
+	sv_g2Mapping.Update(*g2HandleReceiver, g2);
 	return ret;
 }
 
 static qboolean SV_G2API_SetSkin( void *ghoul2, int modelIndex, qhandle_t customSkin, qhandle_t renderSkin ) {
 	if ( !ghoul2 ) return qfalse;
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	return re->G2API_SetSkin( g2, modelIndex, customSkin, renderSkin );
 }
 
 static void SV_G2API_CollisionDetect( CollisionRecord_t *collRecMap, void* ghoul2, const vec3_t angles, const vec3_t position, int frameNumber, int entNum, vec3_t rayStart, vec3_t rayEnd, vec3_t scale, int traceFlags, int useLod, float fRadius ) {
 	if ( !ghoul2 ) return;
-	re->G2API_CollisionDetect( collRecMap, *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), angles, position, frameNumber, entNum, rayStart, rayEnd, scale, G2VertSpaceServer, traceFlags, useLod, fRadius );
+	re->G2API_CollisionDetect( collRecMap, *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), angles, position, frameNumber, entNum, rayStart, rayEnd, scale, G2VertSpaceServer, traceFlags, useLod, fRadius );
 }
 
 static void SV_G2API_CollisionDetectCache( CollisionRecord_t *collRecMap, void* ghoul2, const vec3_t angles, const vec3_t position, int frameNumber, int entNum, vec3_t rayStart, vec3_t rayEnd, vec3_t scale, int traceFlags, int useLod, float fRadius ) {
 	if ( !ghoul2 ) return;
-	re->G2API_CollisionDetectCache( collRecMap, *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), angles, position, frameNumber, entNum, rayStart, rayEnd, scale, G2VertSpaceServer, traceFlags, useLod, fRadius );
+	re->G2API_CollisionDetectCache( collRecMap, *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), angles, position, frameNumber, entNum, rayStart, rayEnd, scale, G2VertSpaceServer, traceFlags, useLod, fRadius );
 }
 
-static void SV_G2API_CleanGhoul2Models( void **ghoul2Ptr ) {
+static void SV_G2API_CleanGhoul2Models( void **rawG2HandlePtr ) {
 #ifdef _FULL_G2_LEAK_CHECKING
 		g_G2AllocServer = 1;
 #endif
-
-	CGhoul2Info_v **g2Ptr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)ghoul2Ptr );
-	re->G2API_CleanGhoul2Models( g2Ptr );
-	SV_G2Map_Update( (g2handleptr_t*)ghoul2Ptr, *g2Ptr );
+	g2handleptr_t* g2HandlePtr = reinterpret_cast<g2handleptr_t*>(rawG2HandlePtr);
+	assert(g2HandlePtr);
+	CGhoul2Info_v *g2 = sv_g2Mapping.Lookup( *g2HandlePtr );
+	re->G2API_CleanGhoul2Models( &g2 );
+	sv_g2Mapping.Update( *g2HandlePtr, g2 );
 }
 
 static qboolean SV_G2API_SetBoneAngles( void *ghoul2, int modelIndex, const char *boneName, const vec3_t angles, const int flags, const int up, const int right, const int forward, qhandle_t *modelList, int blendTime , int currentTime ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_SetBoneAngles( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boneName, angles, flags, (const Eorientations)up, (const Eorientations)right, (const Eorientations)forward, modelList, blendTime , currentTime );
+	return re->G2API_SetBoneAngles( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boneName, angles, flags, (const Eorientations)up, (const Eorientations)right, (const Eorientations)forward, modelList, blendTime , currentTime );
 }
 
 static qboolean SV_G2API_SetBoneAnim( void *ghoul2, const int modelIndex, const char *boneName, const int startFrame, const int endFrame, const int flags, const float animSpeed, const int currentTime, const float setFrame, const int blendTime ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_SetBoneAnim( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boneName, startFrame, endFrame, flags, animSpeed, currentTime, setFrame, blendTime );
+	return re->G2API_SetBoneAnim( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boneName, startFrame, endFrame, flags, animSpeed, currentTime, setFrame, blendTime );
 }
 
 static qboolean SV_G2API_GetBoneAnim( void *ghoul2, const char *boneName, const int currentTime, float *currentFrame, int *startFrame, int *endFrame, int *flags, float *animSpeed, int *modelList, const int modelIndex ) {
 	if ( !ghoul2 ) return qfalse;
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	return re->G2API_GetBoneAnim( g2, modelIndex, boneName, currentTime, currentFrame, startFrame, endFrame, flags, animSpeed, modelList );
 }
 
@@ -1788,7 +1723,7 @@ static void SV_G2API_GetGLAName( void *ghoul2, int modelIndex, char *fillBuf ) {
 		return;
 	}
 
-	char *tmp = re->G2API_GetGLAName( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex );
+	char *tmp = re->G2API_GetGLAName( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex );
 	if ( tmp )
 		strcpy( fillBuf, tmp );
 	else
@@ -1797,97 +1732,108 @@ static void SV_G2API_GetGLAName( void *ghoul2, int modelIndex, char *fillBuf ) {
 
 static int SV_G2API_CopyGhoul2Instance( void *g2From, void *g2To, int modelIndex ) {
 	if ( !g2From || !g2To ) return 0;
-	return re->G2API_CopyGhoul2Instance( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)g2From)), *(SV_G2Map_GetG2FromHandle((g2handleptr_t)g2To)), modelIndex );
+	return re->G2API_CopyGhoul2Instance(*sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(g2From)), *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(g2To)), modelIndex );
 }
 
 static void SV_G2API_CopySpecificGhoul2Model( void *g2From, int modelFrom, void *g2To, int modelTo ) {
 	if ( !g2From || !g2To ) return;
-	re->G2API_CopySpecificG2Model( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)g2From)), modelFrom, *(SV_G2Map_GetG2FromHandle((g2handleptr_t)g2To)), modelTo );
+	re->G2API_CopySpecificG2Model( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(g2From)), modelFrom, *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(g2To)), modelTo );
 }
 
-static void SV_G2API_DuplicateGhoul2Instance( void *g2From, void **g2To ) {
+static void SV_G2API_DuplicateGhoul2Instance( void *rawG2HandleFrom, void **rawG2HandlePtrTo ) {
 #ifdef _FULL_G2_LEAK_CHECKING
 		g_G2AllocServer = 1;
 #endif
-	if ( !g2From || !g2To ) return;
+	g2handleptr_t g2HandleFrom = reinterpret_cast<g2handleptr_t>(rawG2HandleFrom);
+	g2handleptr_t* g2HandlePtrTo = reinterpret_cast<g2handleptr_t*>(rawG2HandlePtrTo);
+	if ( !g2HandleFrom || !g2HandlePtrTo ) return;
 
-	CGhoul2Info_v **g2ToPtr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)g2To );
-	re->G2API_DuplicateGhoul2Instance( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)g2From)), g2ToPtr );
-	SV_G2Map_Update( (g2handleptr_t*)g2To, *g2ToPtr );
+	CGhoul2Info_v *g2 = sv_g2Mapping.Lookup( *g2HandlePtrTo );
+	re->G2API_DuplicateGhoul2Instance( *sv_g2Mapping.Lookup(g2HandleFrom), &g2 );
+	sv_g2Mapping.Update( *g2HandlePtrTo, g2 );
 }
 
+// FIXME: shouldn't ghlInfo be a void**?
 static qboolean SV_G2API_HasGhoul2ModelOnIndex( void *ghlInfo, int modelIndex ) {
-	CGhoul2Info_v **g2Ptr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)ghlInfo );
-	qboolean ret = re->G2API_HasGhoul2ModelOnIndex( g2Ptr, modelIndex );
-	SV_G2Map_Update( (g2handleptr_t*)ghlInfo, *g2Ptr );
+	g2handleptr_t* g2HandlePtr = reinterpret_cast<g2handleptr_t*>(ghlInfo);
+	assert(g2HandlePtr);
+	CGhoul2Info_v *g2 = sv_g2Mapping.Lookup( *g2HandlePtr );
+	qboolean ret = re->G2API_HasGhoul2ModelOnIndex( &g2, modelIndex );
+	sv_g2Mapping.Update( *g2HandlePtr, g2 );
 	return ret;
 }
 
+// FIXME: shouldn't ghlInfo be a void**?
 static qboolean SV_G2API_RemoveGhoul2Model( void *ghlInfo, int modelIndex ) {
 #ifdef _FULL_G2_LEAK_CHECKING
 		g_G2AllocServer = 1;
 #endif
-	CGhoul2Info_v **g2Ptr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)ghlInfo );
-	qboolean ret = re->G2API_RemoveGhoul2Model( g2Ptr, modelIndex );
-	SV_G2Map_Update( (g2handleptr_t*)ghlInfo, *g2Ptr );
+	g2handleptr_t* g2HandlePtr = reinterpret_cast<g2handleptr_t*>(ghlInfo);
+	assert(g2HandlePtr);
+	CGhoul2Info_v *g2 = sv_g2Mapping.Lookup( *g2HandlePtr );
+	qboolean ret = re->G2API_RemoveGhoul2Model( &g2, modelIndex );
+	sv_g2Mapping.Update( *g2HandlePtr, g2 );
 	return ret;
 }
 
+// FIXME: shouldn't ghlInfo be a void**?
 static qboolean SV_G2API_RemoveGhoul2Models( void *ghlInfo ) {
 #ifdef _FULL_G2_LEAK_CHECKING
 	g_G2AllocServer = 1;
 #endif
-	CGhoul2Info_v **g2Ptr = SV_G2Map_GetG2PtrFromHandle( (g2handleptr_t*)ghlInfo );
-	qboolean ret = re->G2API_RemoveGhoul2Models( g2Ptr );
-	SV_G2Map_Update( (g2handleptr_t*)ghlInfo, *g2Ptr );
+	g2handleptr_t* g2HandlePtr = reinterpret_cast<g2handleptr_t*>(ghlInfo);
+	assert(g2HandlePtr);
+	CGhoul2Info_v *g2 = sv_g2Mapping.Lookup( *g2HandlePtr );
+	qboolean ret = re->G2API_RemoveGhoul2Models( &g2 );
+	sv_g2Mapping.Update( *g2HandlePtr, g2 );
 	return ret;
 }
 
 static int SV_G2API_Ghoul2Size( void *ghlInfo ) {
 	if ( !ghlInfo ) return 0;
-	return re->G2API_Ghoul2Size( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghlInfo)) );
+	return re->G2API_Ghoul2Size( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghlInfo)) );
 }
 
 static int SV_G2API_AddBolt( void *ghoul2, int modelIndex, const char *boneName ) {
 	if ( !ghoul2 ) return -1;
-	return re->G2API_AddBolt( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boneName );
+	return re->G2API_AddBolt( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boneName );
 }
 
 static void SV_G2API_SetBoltInfo( void *ghoul2, int modelIndex, int boltInfo ) {
 	if ( !ghoul2 ) return;
-	re->G2API_SetBoltInfo( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, boltInfo );
+	re->G2API_SetBoltInfo( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, boltInfo );
 }
 
 static qboolean SV_G2API_SetRootSurface( void *ghoul2, const int modelIndex, const char *surfaceName ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_SetRootSurface( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), modelIndex, surfaceName );
+	return re->G2API_SetRootSurface( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), modelIndex, surfaceName );
 }
 
 static qboolean SV_G2API_SetSurfaceOnOff( void *ghoul2, const char *surfaceName, const int flags ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_SetSurfaceOnOff( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), surfaceName, flags );
+	return re->G2API_SetSurfaceOnOff( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), surfaceName, flags );
 }
 
 static qboolean SV_G2API_SetNewOrigin( void *ghoul2, const int boltIndex ) {
 	if ( !ghoul2 ) return qfalse;
-	return re->G2API_SetNewOrigin( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boltIndex );
+	return re->G2API_SetNewOrigin( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boltIndex );
 }
 
 static qboolean SV_G2API_DoesBoneExist( void *ghoul2, int modelIndex, const char *boneName ) {
 	if ( !ghoul2 ) return qfalse;
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	return re->G2API_DoesBoneExist( g2, modelIndex, boneName );
 }
 
 static int SV_G2API_GetSurfaceRenderStatus( void *ghoul2, const int modelIndex, const char *surfaceName ) {
 	if ( !ghoul2 ) return -1;
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	return re->G2API_GetSurfaceRenderStatus( g2, modelIndex, surfaceName );
 }
 
 static void SV_G2API_AbsurdSmoothing( void *ghoul2, qboolean status ) {
 	if ( !ghoul2 ) return;
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	re->G2API_AbsurdSmoothing( g2, status );
 }
 
@@ -1897,7 +1843,7 @@ static void SV_G2API_SetRagDoll( void *ghoul2, sharedRagDollParams_t *params ) {
 	CRagDollParams rdParams;
 
 	if ( !params ) {
-		re->G2API_ResetRagDoll( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)) );
+		re->G2API_ResetRagDoll( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)) );
 		return;
 	}
 
@@ -1920,7 +1866,7 @@ static void SV_G2API_SetRagDoll( void *ghoul2, sharedRagDollParams_t *params ) {
 	rdParams.RagPhase = (CRagDollParams::ERagPhase)params->RagPhase;
 	rdParams.effectorsToTurnOff = (CRagDollParams::ERagEffector)params->effectorsToTurnOff;
 
-	re->G2API_SetRagDoll( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), &rdParams );
+	re->G2API_SetRagDoll( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), &rdParams );
 }
 
 static void SV_G2API_AnimateG2Models( void *ghoul2, int time, sharedRagDollUpdateParams_t *params ) {
@@ -1937,48 +1883,48 @@ static void SV_G2API_AnimateG2Models( void *ghoul2, int time, sharedRagDollUpdat
 	rduParams.me = params->me;
 	rduParams.settleFrame = params->settleFrame;
 
-	re->G2API_AnimateG2ModelsRag( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), time, &rduParams );
+	re->G2API_AnimateG2ModelsRag( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), time, &rduParams );
 }
 
 static qboolean SV_G2API_RagPCJConstraint( void *ghoul2, const char *boneName, vec3_t min, vec3_t max ) {
-	return re->G2API_RagPCJConstraint( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boneName, min, max );
+	return re->G2API_RagPCJConstraint( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boneName, min, max );
 }
 
 static qboolean SV_G2API_RagPCJGradientSpeed( void *ghoul2, const char *boneName, const float speed ) {
-	return re->G2API_RagPCJGradientSpeed( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boneName, speed );
+	return re->G2API_RagPCJGradientSpeed( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boneName, speed );
 }
 
 static qboolean SV_G2API_RagEffectorGoal( void *ghoul2, const char *boneName, vec3_t pos ) {
-	return re->G2API_RagEffectorGoal( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boneName, pos );
+	return re->G2API_RagEffectorGoal( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boneName, pos );
 }
 
 static qboolean SV_G2API_GetRagBonePos( void *ghoul2, const char *boneName, vec3_t pos, vec3_t entAngles, vec3_t entPos, vec3_t entScale ) {
-	return re->G2API_GetRagBonePos( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boneName, pos, entAngles, entPos, entScale );
+	return re->G2API_GetRagBonePos( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boneName, pos, entAngles, entPos, entScale );
 }
 
 static qboolean SV_G2API_RagEffectorKick( void *ghoul2, const char *boneName, vec3_t velocity ) {
-	return re->G2API_RagEffectorKick( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), boneName, velocity );
+	return re->G2API_RagEffectorKick( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), boneName, velocity );
 }
 
 static qboolean SV_G2API_RagForceSolve( void *ghoul2, qboolean force ) {
-	return re->G2API_RagForceSolve( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), force );
+	return re->G2API_RagForceSolve( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), force );
 }
 
 static qboolean SV_G2API_SetBoneIKState( void *ghoul2, int time, const char *boneName, int ikState, sharedSetBoneIKStateParams_t *params ) {
-	return re->G2API_SetBoneIKState( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), time, boneName, ikState, params );
+	return re->G2API_SetBoneIKState( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), time, boneName, ikState, params );
 }
 
 static qboolean SV_G2API_IKMove( void *ghoul2, int time, sharedIKMoveParams_t *params ) {
-	return re->G2API_IKMove( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), time, params );
+	return re->G2API_IKMove( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), time, params );
 }
 
 static qboolean SV_G2API_RemoveBone( void *ghoul2, const char *boneName, int modelIndex ) {
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	return re->G2API_RemoveBone( g2, modelIndex, boneName );
 }
 
 static void SV_G2API_AttachInstanceToEntNum( void *ghoul2, int entityNum, qboolean server ) {
-	re->G2API_AttachInstanceToEntNum( *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2)), entityNum, server );
+	re->G2API_AttachInstanceToEntNum( *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2)), entityNum, server );
 }
 
 static void SV_G2API_ClearAttachedInstance( int entityNum ) {
@@ -1990,12 +1936,12 @@ static void SV_G2API_CleanEntAttachments( void ) {
 }
 
 static qboolean SV_G2API_OverrideServer( void *serverInstance ) {
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)serverInstance));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(serverInstance));
 	return re->G2API_OverrideServerWithClientData( g2, 0 );
 }
 
 static void SV_G2API_GetSurfaceName( void *ghoul2, int surfNumber, int modelIndex, char *fillBuf ) {
-	CGhoul2Info_v &g2 = *(SV_G2Map_GetG2FromHandle((g2handleptr_t)ghoul2));
+	CGhoul2Info_v &g2 = *sv_g2Mapping.Lookup(reinterpret_cast<g2handleptr_t>(ghoul2));
 	char *tmp = re->G2API_GetSurfaceName( g2, modelIndex, surfNumber );
 	strcpy( fillBuf, tmp );
 }
@@ -3071,7 +3017,6 @@ void SV_InitGame( qboolean restart ) {
 	// clear level pointers
 	sv.entityParsePoint = CM_EntityString();
 	for ( i=0, cl=svs.clients; i<sv_maxclients->integer; i++, cl++ ) {
-		cl->gentity = NULL;
 		cl->gentityMapper = NULL;
 	}
 

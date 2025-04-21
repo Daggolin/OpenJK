@@ -145,7 +145,7 @@ int ICARUS_RunScript( sharedEntityMapper_t *ent, const char *name )
 
 	if ( ( ICARUS_entFilter == -1 ) || ( ICARUS_entFilter == ent->s->number ) )
 	{
-		Q3_DebugPrint( WL_VERBOSE, "%d Script %s executed by %s %s\n", svs.time, (char *) name, SV_EntityMapperReadString(ent->classname), SV_EntityMapperReadString(ent->targetname) );
+		Q3_DebugPrint( WL_VERBOSE, "%d Script %s executed by %s %s\n", svs.time, (char *) name, reinterpret_cast<char*>(SV_EntityMapperReadPointer(ent->classname)), reinterpret_cast<char*>(SV_EntityMapperReadPointer(ent->targetname)) );
 	}
 
 	return true;
@@ -253,7 +253,7 @@ void ICARUS_FreeEnt( sharedEntityMapper_t *ent )
 		return;
 
 	//Remove them from the ICARUSE_EntList list so that when their g_entity index is reused, ICARUS doesn't try to affect the new (incorrect) ent.
-	script_targetname = SV_EntityMapperReadString( ent->script_targetname );
+	script_targetname = reinterpret_cast<char*>(SV_EntityMapperReadPointer( ent->script_targetname ));
 	if VALIDSTRING( script_targetname )
 	{
 		char	temp[1024];
@@ -288,7 +288,7 @@ Determines whether or not an entity needs ICARUS information
 
 bool ICARUS_ValidEnt( sharedEntityMapper_t *ent )
 {
-	const char *script_targetname = SV_EntityMapperReadString( ent->script_targetname );
+	const char* script_targetname = reinterpret_cast<char*>(SV_EntityMapperReadPointer(ent->script_targetname));
 	int i;
 
 	//Targeted by a script
@@ -298,7 +298,7 @@ bool ICARUS_ValidEnt( sharedEntityMapper_t *ent )
 	//Potentially able to call a script
 	for ( i = 0; i < NUM_BSETS; i++ )
 	{
-		if VALIDSTRING( SV_EntityMapperReadString(ent->behaviorSet[i]) )
+		if VALIDSTRING( reinterpret_cast<char*>(SV_EntityMapperReadPointer(ent->behaviorSet[i])) )
 		{
 			//Com_Printf( "WARNING: Entity %d (%s) has behaviorSet but no script_targetname -- using targetname\n", ent->s.number, ent->targetname );
 
@@ -307,16 +307,17 @@ bool ICARUS_ValidEnt( sharedEntityMapper_t *ent )
 			//and while this allows us to read it on our "fake" entity here, we can't modify pointers like this. We can however do
 			//something completely hackish such as the following.
 			assert(ent->s->number >= 0 && ent->s->number < MAX_GENTITIES);
-			sharedEntity_t *trueEntity = SV_GentityNum(ent->s->number);
 
 			//This works because we're modifying the actual shared game vm data and turning one pointer into another.
 			//While these pointers both look like garbage to us in here, they are not.
 			if ( VM_IsCurrentQVM() )
 			{
-				sharedEntity_qvm_t *trueEntityQVM = (sharedEntity_qvm_t*)trueEntity;
-				trueEntityQVM->script_targetname = trueEntityQVM->targetname;
+				*ent->script_targetname.qvm = *ent->targetname.qvm;
 			}
-			else trueEntity->script_targetname = trueEntity->targetname;
+			else
+			{
+				*ent->script_targetname.native = *ent->targetname.native;
+			}
 			return true;
 		}
 	}
@@ -334,7 +335,7 @@ Associate the entity's id and name so that it can be referenced later
 
 void ICARUS_AssociateEnt( sharedEntityMapper_t *ent )
 {
-	const char *script_targetname = SV_EntityMapperReadString( ent->script_targetname );
+	const char *script_targetname = reinterpret_cast<char*>(SV_EntityMapperReadPointer( ent->script_targetname ));
 	char	temp[1024];
 
 	if ( VALIDSTRING( script_targetname ) == false )
@@ -647,7 +648,7 @@ void ICARUS_PrecacheEnt( sharedEntityMapper_t *ent )
 
 	for ( i = 0; i < NUM_BSETS; i++ )
 	{
-		if ( !(behaviorStr = SV_EntityMapperReadString(ent->behaviorSet[i])) )
+		if ( !(behaviorStr = reinterpret_cast<char*>(SV_EntityMapperReadPointer(ent->behaviorSet[i]))) )
 			continue;
 
 		if ( GetIDForString( BSTable, behaviorStr ) == -1 )
